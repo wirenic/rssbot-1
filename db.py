@@ -4,7 +4,7 @@ import sqlite3
 
 
 def db_init():
-    """初始化数据库，创建 rss & usr 表"""
+    """Init the database, create the rss & usr table"""
     conn = sqlite3.connect('rss.db', check_same_thread=False)
     c = conn.cursor()
     c.execute("CREATE TABLE rss (rss text, title text, link text, last text)")
@@ -14,7 +14,7 @@ def db_init():
 
 
 def db_all():
-    """加载rss数据表，并返回所有内容"""
+    """Load the rss table and return all content"""
     conn = sqlite3.connect('rss.db', check_same_thread=False)
     c = conn.cursor()
     c.execute("SELECT * FROM rss")
@@ -24,7 +24,7 @@ def db_all():
 
 
 def db_update(rss, last):
-    """更新rss数据表"""
+    """Update rss table"""
     conn = sqlite3.connect('rss.db', check_same_thread=False)
     c = conn.cursor()
     q = [last, rss]
@@ -34,7 +34,7 @@ def db_update(rss, last):
 
 
 def db_chatid(chatid):
-    """获取订阅列表"""
+    """Get subscription list"""
     conn = sqlite3.connect('rss.db', check_same_thread=False)
     c = conn.cursor()
     c.execute("SELECT * FROM rss INNER JOIN usr u on rss.rss = u.rss WHERE u.chatid=?", (chatid,))
@@ -43,7 +43,7 @@ def db_chatid(chatid):
 
 
 def db_rss(rss):
-    """检查rss表中是否存在此链接"""
+    """Check if this link exists in the rss table"""
     conn = sqlite3.connect('rss.db', check_same_thread=False)
     c = conn.cursor()
     c.execute("SELECT * FROM rss WHERE rss=?", (rss,))
@@ -52,7 +52,7 @@ def db_rss(rss):
 
 
 def db_rssusr(rss):
-    """获取rss订阅用户"""
+    """Get rss subscribers"""
     conn = sqlite3.connect('rss.db', check_same_thread=False)
     c = conn.cursor()
     c.execute("SELECT * FROM usr WHERE rss=?", (rss,))
@@ -61,7 +61,7 @@ def db_rssusr(rss):
 
 
 def db_chatid_rss(chatid, rss):
-    """检查是否存在此订阅"""
+    """Check if this subscription exists"""
     conn = sqlite3.connect('rss.db', check_same_thread=False)
     c = conn.cursor()
     c.execute("SELECT * FROM rss INNER JOIN usr u on rss.rss = u.rss WHERE u.chatid=? AND u.rss=?", (chatid, rss))
@@ -71,7 +71,7 @@ def db_chatid_rss(chatid, rss):
 
 
 def db_write_rss(rss, title, link, last):
-    """写入rss数据表"""
+    """Write to rss table"""
     conn = sqlite3.connect('rss.db', check_same_thread=False)
     c = conn.cursor()
     q = [rss, title, link, last]
@@ -81,7 +81,7 @@ def db_write_rss(rss, title, link, last):
 
 
 def db_write_usr(chatid, rss):
-    """写入rss数据表"""
+    """Write to usr table"""
     conn = sqlite3.connect('rss.db', check_same_thread=False)
     c = conn.cursor()
     q = [chatid, rss]
@@ -91,7 +91,7 @@ def db_write_usr(chatid, rss):
 
 
 def db_remove(chatid, rss):
-    """删除订阅"""
+    """Delete subscription"""
     try:
         conn = sqlite3.connect('rss.db', check_same_thread=False)
         c = conn.cursor()

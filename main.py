@@ -22,7 +22,7 @@ logging.basicConfig(
 
 
 def get_list(rss_d, last):
-    """获取订阅源更新的文章链接列表"""
+    """Get a list of article links for feed updates"""
     link_list = []
     for r in range(len(rss_d['links'])):
         link = rss_d['links'][r].link
@@ -33,7 +33,7 @@ def get_list(rss_d, last):
 
 
 def get_refresh():
-    """更新订阅"""
+    """Refresh subscription"""
     rows = db_all()
     for row in rows:
         try:
@@ -45,7 +45,7 @@ def get_refresh():
             link_list = get_list(rss_d, row[-1])
             if len(link_list) > 0:
                 for link in link_list:
-                    # 获取订阅用户
+                    # Get subscribers
                     usrlist = db_rssusr(row[0])
                     if usrlist:
                         for u in usrlist:
@@ -80,7 +80,7 @@ def cmd_help(message):
 
 @bot.message_handler(commands=['rss'])
 def cmd_rss(message):
-    """发送给用户其订阅列表"""
+    """Send to users their subscription list"""
     reword = "订阅列表："
     rss_list = db_chatid(message.chat.id)
     if rss_list:
@@ -93,47 +93,49 @@ def cmd_rss(message):
 
 @bot.message_handler(commands=['sub'])
 def cmd_sub(message):
-    """添加订阅"""
-    # 检查格式是否正确
+    """Add subscription"""
+    # Check if the format is correct
     try:
         rss = message.text.split()[1]
     except IndexError:
         bot.reply_to(message, "使用方法: `/sub http://example.com/feed`", parse_mode="MarkdownV2")
     else:
-        # 检查是否为订阅过的RSS
+        # Check if RSS is subscribed
         if db_chatid_rss(message.chat.id, rss):
             bot.reply_to(message, "订阅过的 RSS")
         else:
-            # 检查rss表中是否存在此RSS链接
+            # Check if this RSS link exists in the rss table
             db_rss_list = db_rss(rss)
             if db_rss_list:
                 db_write_usr(message.chat.id, rss)
                 bot.reply_to(message, "[%s](%s) 订阅成功" % (db_rss_list[0][1], db_rss_list[0][2]), parse_mode="MarkdownV2",
                              disable_web_page_preview=True)
             else:
-                # 检查RSS链接是否有效
+                # Check if the RSS link is valid
                 try:
                     rss_parse = feedparser.parse(rss)
                 except urllib.error.URLError:
                     bot.reply_to(message, "订阅失败：链接错误")
                 else:
-                    rss_dict = {'title': rss_parse.feed.title, 'link': rss_parse.feed.link, 'links': rss_parse.entries}
-                    db_write_rss(rss, rss_dict['title'], rss_dict['link'], rss_dict['links'][0].link)
-                    db_write_usr(message.chat.id, rss)
-                    bot.reply_to(message, "[%s](%s) 订阅成功" % (rss_dict['title'], rss_dict['link']),
-                                 parse_mode="MarkdownV2", disable_web_page_preview=True)
+                    if len(rss_parse.entries) < 1:
+                        bot.reply_to(message, "订阅失败：无效的 RSS 链接")
+                    else:
+                        db_write_rss(rss, rss_parse.feed.title, rss_parse.feed.link, rss_parse.entries[0].link)
+                        db_write_usr(message.chat.id, rss)
+                        bot.reply_to(message, "[%s](%s) 订阅成功" % (rss_parse.feed.title, rss_parse.feed.link),
+                                     parse_mode="MarkdownV2", disable_web_page_preview=True)
 
 
 @bot.message_handler(commands=['unsub'])
 def cmd_unsub(message):
-    """移除订阅"""
-    # 检查格式是否正确
+    """Remove subscription"""
+    # Check if the format is correct
     try:
         rss = message.text.split()[1]
     except IndexError:
         bot.reply_to(message, "使用方法: `/unsub http://example.com/feed`", parse_mode="MarkdownV2")
     else:
-        # 检查是否RSS是否订阅
+        # Check if RSS is subscribed
         row = db_chatid_rss(message.chat.id, rss)
         if len(row) > 0:
             result = db_remove(message.chat.id, rss)
@@ -143,12 +145,12 @@ def cmd_unsub(message):
             else:
                 bot.reply_to(message, "移除失败：%s" % result)
         else:
-            bot.reply_to(message, "未订阅过的RSS")
+            bot.reply_to(message, "未订阅过的 RSS")
 
 
 @bot.message_handler(commands=['refresh'])
 def cmd_refresh(message):
-    """手动更新订阅"""
+    """Update subscription manually"""
     get_refresh()
 
 
@@ -156,7 +158,7 @@ if __name__ == '__main__':
     scheduler = BackgroundScheduler(timezone="Asia/Shanghai")
     scheduler.add_job(get_refresh, 'interval', minutes=config.INTERVAL)
     scheduler.start()
-    # 如果未创建数据库，则创建
+    # Init database
     try:
         db_init()
     except sqlite3.OperationalError:
