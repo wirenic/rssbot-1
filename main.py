@@ -11,26 +11,19 @@ from apscheduler.schedulers.background import BackgroundScheduler
 import config
 from db import *
 
-logger = telebot.logger
-telebot.logger.setLevel(logging.WARNING)
 # telebot.apihelper.proxy = {'https': 'socks5h://127.0.0.1:7890'}
 bot = telebot.TeleBot(config.TOKEN, parse_mode=None)
 
-logging.basicConfig(
-    filename='log.txt',
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-    level=logging.WARNING)
+logger = logging.getLogger()
+logger.setLevel(logging.WARNING)
 
+fh = logging.FileHandler("warn.log")
+fh.setLevel(logging.WARNING)
 
-def get_list(rss_d, last):
-    """Get a list of article links for feed updates"""
-    link_list = []
-    for r in range(len(rss_d['links'])):
-        link = rss_d['links'][r].link
-        if link == last:
-            return link_list
-        link_list.append(link)
-    return link_list
+formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+fh.setFormatter(formatter)
+
+logger.addHandler(fh)
 
 
 def get_refresh():
@@ -42,8 +35,15 @@ def get_refresh():
         except urllib.error.URLError:
             pass
         else:
-            rss_d = {'title': rss_parse.feed.title, 'link': rss_parse.feed.link, 'links': rss_parse.entries}
-            link_list = get_list(rss_d, row[-1])
+            # Get a list of article links for feed updates
+            links = rss_parse.entries
+            last_link = row[-1]
+            link_list = []
+            for r in range(len(links)):
+                link = links[r].link
+                if link == last_link:
+                    return link_list
+                link_list.append(link)
             if len(link_list) > 0:
                 for link in link_list:
                     # Get subscribers
