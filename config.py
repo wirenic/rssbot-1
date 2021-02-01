@@ -5,6 +5,3 @@ TOKEN = ""
 
 INTERVAL = 5
 
-# Use webhook
-URL = "https://example.com/"
-SERVER_IP = ""
