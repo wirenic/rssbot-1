@@ -26,39 +26,39 @@ fh.setFormatter(formatter)
 logger.addHandler(fh)
 
 
+def get_list(entries, last_link):
+    """Get a list of article links for feed updates"""
+    link_list = []
+    for entry in entries:
+        link = entry.link
+        if link == last_link:
+            return link_list
+        link_list.append(link)
+    return link_list
+
+
 def get_refresh():
     """Refresh subscription"""
     rows = db_all()
     for row in rows:
         try:
             rss_parse = feedparser.parse(row[0])
-        except urllib.error.URLError:
-            pass
+        except urllib.error.URLError as e:
+            logging.warning(row[0] + "\t" + str(e))
         else:
-            # Get a list of article links for feed updates
-            links = rss_parse.entries
-            last_link = row[-1]
-            link_list = []
-            for r in range(len(links)):
-                link = links[r].link
-                if link == last_link:
-                    return link_list
-                link_list.append(link)
-            if len(link_list) > 0:
-                for link in link_list:
-                    # Get subscribers
-                    usrlist = db_rssusr(row[0])
-                    if usrlist:
-                        for u in usrlist:
-                            bot.send_message(u[0], "<b>%s</b>\n%s" % (row[1], str(link)), parse_mode="HTML")
-                    else:
-                        pass
+            link_list = get_list(rss_parse.entries, row[-1])
+            if link_list:
+                # Get subscribers
+                usrlist = db_rssusr(row[0])
+                if usrlist:
+                    for usr in usrlist:
+                        uid = usr[0]
+                        for link in link_list:
+                            bot.send_message(uid, "<b>%s</b>\n%s" % (row[1], str(link)), parse_mode="HTML")
                 try:
                     db_update(row[0], link_list[0])
-                except Exception as err:
-                    logging.warning(str(err))
-            else:
-                pass
+                except Exception as e:
+                    logging.warning(str(e))
 
 
 @bot.message_handler(commands=['start'])
