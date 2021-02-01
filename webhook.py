@@ -80,7 +80,7 @@ def get_message():
 @app.route('/setwebhook', methods=['GET', 'POST'])
 def set_webhook():
     bot.remove_webhook()
-    s = bot.set_webhook('{URL}{HOOK}'.format(URL=config.URL, HOOK=config.TOKEN, ip_address=config.SERVER_IP))
+    s = bot.set_webhook('{URL}{HOOK}'.format(URL=config.URL, HOOK=config.TOKEN), ip_address=config.SERVER_IP)
     if s:
         return "webhook setup ok"
     else:
