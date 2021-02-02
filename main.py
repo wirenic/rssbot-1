@@ -1,10 +1,10 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
-
+import io
 import logging
-import urllib
 
 import feedparser
+import requests
 import telebot
 from apscheduler.schedulers.background import BackgroundScheduler
 
@@ -42,10 +42,13 @@ def get_refresh():
     rows = db_all()
     for row in rows:
         try:
-            rss_parse = feedparser.parse(row[0])
-        except urllib.error.URLError as e:
+            rss_content = requests.get(row[0], timeout=5)
+        except requests.exceptions.ReadTimeout as e:
+            logging.warning(row[0] + "\t" + str(e))
+        except requests.exceptions.ConnectionError as e:
             logging.warning(row[0] + "\t" + str(e))
         else:
+            rss_parse = feedparser.parse(io.BytesIO(rss_content.content))
             link_list = get_list(rss_parse.entries, row[-1])
             if link_list:
                 # Get subscribers
@@ -114,10 +117,13 @@ def cmd_sub(message):
             else:
                 # Check if the RSS link is valid
                 try:
-                    rss_parse = feedparser.parse(rss)
-                except urllib.error.URLError:
-                    bot.reply_to(message, "订阅失败：链接错误")
+                    rss_content = requests.get(rss, timeout=5)
+                except requests.exceptions.ReadTimeout as e:
+                    bot.reply_to(message, "订阅失败：连接超时（%s）" % e)
+                except requests.exceptions.ConnectionError as e:
+                    bot.reply_to(message, "订阅失败：链接错误（%s）" % e)
                 else:
+                    rss_parse = feedparser.parse(io.BytesIO(rss_content.content))
                     if len(rss_parse.entries) < 1:
                         bot.reply_to(message, "订阅失败：无效的 RSS 链接")
                     else:
