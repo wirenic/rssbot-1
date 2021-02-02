@@ -1,7 +1,8 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
-import io
+
 import logging
+import io
 
 import feedparser
 import requests
@@ -14,16 +15,12 @@ from db import *
 # telebot.apihelper.proxy = {'https': 'socks5h://127.0.0.1:7890'}
 bot = telebot.TeleBot(config.TOKEN, parse_mode=None)
 
-logger = logging.getLogger()
-logger.setLevel(logging.WARNING)
-
-fh = logging.FileHandler("warn.log")
-fh.setLevel(logging.WARNING)
-
-formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
-fh.setFormatter(formatter)
-
-logger.addHandler(fh)
+logger = telebot.logger.setLevel(logging.WARNING)
+logging.basicConfig(
+    filename='rssbot.log',
+    filemode='a',
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    level=logging.WARNING)
 
 
 def get_list(entries, last_link):
@@ -42,7 +39,7 @@ def get_refresh():
     rows = db_all()
     for row in rows:
         try:
-            rss_content = requests.get(row[0], timeout=5)
+            rss_content = requests.get(row[0], timeout=5, proxies={"http": None, "https": None})
         except requests.exceptions.ReadTimeout as e:
             logging.warning(row[0] + "\t" + str(e))
         except requests.exceptions.ConnectionError as e:
