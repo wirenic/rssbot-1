@@ -73,7 +73,7 @@ class Config(object):
             'id': 'get_refresh',
             'func': 'webhook:get_refresh',
             'trigger': 'interval',
-            'minutes': 5
+            'minutes': config.INTERVAL
         }
     ]
     SCHEDULER_API_ENABLED = True
