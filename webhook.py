@@ -1,31 +1,47 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
-import io
+import asyncio
 import logging
 
-import requests
-from flask import Flask, request
-from flask_apscheduler import APScheduler
+import aiohttp
 import feedparser
-import telebot
+from aiogram import Bot, types
+from aiogram.contrib.middlewares.logging import LoggingMiddleware
+from aiogram.dispatcher import Dispatcher
+from aiogram.utils.executor import start_webhook
+from apscheduler.schedulers.asyncio import AsyncIOScheduler
 
 import config
 from db import *
 
-# telebot.apihelper.proxy = {'https': 'socks5h://127.0.0.1:7890'}
-bot = telebot.TeleBot(config.TOKEN, parse_mode=None)
+API_TOKEN = config.TOKEN
 
+# webhook settings
+WEBHOOK_HOST = config.WEBHOOK_HOST
+WEBHOOK_PATH = config.WEBHOOK_PATH
+WEBHOOK_URL = f"{WEBHOOK_HOST}{WEBHOOK_PATH}"
+
+# webserver settings
+WEBAPP_HOST = config.WEBAPP_HOST
+WEBAPP_PORT = config.WEBAPP_PORT
+
+# Configure logging
 logging.basicConfig(
-    filename='webhook.log',
-    filemode='a',
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-    level=logging.WARNING
-)
+    level=logging.WARNING)
 
-logger = logging.getLogger(__name__)
+headers = {
+    'user-agent': 'Mozilla/5.0 (Windows NT 6.1; WOW64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/39.0.2171.71 '
+                  'Safari/537.36',
+}
+
+# Initialize bot and dispatcher
+bot = Bot(token=API_TOKEN)
+dp = Dispatcher(bot)
+dp.middleware.setup(LoggingMiddleware())
 
 
-def get_list(entries, last_link):
+async def get_list(entries, last_link):
     """Get a list of article links for feed updates"""
     link_list = []
     for entry in entries:
@@ -36,178 +52,184 @@ def get_list(entries, last_link):
     return link_list
 
 
-def get_refresh():
-    """Refresh subscription"""
+async def get_refresh():
+    """Update subscription"""
     rows = db_all()
-    for row in rows:
-        try:
-            rss_content = requests.get(row[0], timeout=5, proxies={"http": None, "https": None})
-        except requests.exceptions.ReadTimeout as e:
-            logging.warning(row[0] + "\t" + str(e))
-        except requests.exceptions.ConnectionError as e:
-            logging.warning(row[0] + "\t" + str(e))
-        else:
-            rss_parse = feedparser.parse(io.BytesIO(rss_content.content))
-            link_list = get_list(rss_parse.entries, row[-1])
-            if link_list:
-                # Get subscribers
-                usrlist = db_rssusr(row[0])
-                if usrlist:
-                    for usr in usrlist:
-                        uid = usr[0]
-                        for link in link_list:
-                            bot.send_message(uid, "<b>%s</b>\n%s" % (row[1], str(link)), parse_mode="HTML")
-                try:
-                    db_update(row[0], link_list[0])
-                except Exception as e:
-                    logging.warning(str(e))
+    loop = asyncio.get_event_loop()
+    async with aiohttp.ClientSession(loop=loop, headers=headers) as session:
+        tasks = [
+            loop.create_task(refresh(session, row))
+            for row in rows]
+        await asyncio.gather(*tasks)
 
 
-# Setting Flask
-app = Flask(__name__)
-
-
-class Config(object):
-    JOBS = [
-        {
-            'id': 'get_refresh',
-            'func': 'webhook:get_refresh',
-            'trigger': 'interval',
-            'minutes': config.INTERVAL
-        }
-    ]
-    SCHEDULER_API_ENABLED = True
-
-
-app.config.from_object(Config())
-scheduler = APScheduler()
-scheduler.init_app(app)
-scheduler.start()
-
-
-@app.route('/')
-def index():
-    return ''
-
-
-@app.route('/' + config.TOKEN, methods=['POST'])
-def get_message():
-    bot.process_new_updates([telebot.types.Update.de_json(request.stream.read().decode("utf-8"))])
-    return "ok", 200
-
-
-@app.route('/setwebhook', methods=['GET', 'POST'])
-def set_webhook():
-    bot.remove_webhook()
-    s = bot.set_webhook('{URL}{HOOK}'.format(URL=config.URL, HOOK=config.TOKEN), ip_address=config.SERVER_IP)
-    if s:
-        return "webhook setup ok"
+async def refresh(session, row):
+    """Refresh subscription"""
+    try:
+        async with session.get(row[0], timeout=10) as response:
+            rss_content = await response.text()
+            status_code = response.status
+    except aiohttp.client_exceptions.ClientConnectorError:
+        logging.warning(f"{row[1]}[{row[0]}]\t更新失败：链接错误")
+    except asyncio.exceptions.TimeoutError:
+        logging.warning(f"{row[1]}[{row[0]}]\t更新失败：连接超时")
     else:
-        return "webhook setup failed"
+        rss_parse = feedparser.parse(rss_content)
+        if len(rss_parse.entries) < 1:
+            logging.warning(f"{row[1]}[{row[0]}]\t更新失败：链接失效(status:{status_code})")
+        link_list = await get_list(rss_parse.entries, row[-1])
+        if link_list:
+            # Get subscribers
+            usrlist = db_rssusr(row[0])
+            if usrlist:
+                for usr in usrlist:
+                    uid = usr[0]
+                    for link in link_list:
+                        await bot.send_message(uid, f"<b>{row[1]}</b>\n{link}", parse_mode="HTML")
+            try:
+                db_update(row[0], link_list[0])
+            except Exception as e:
+                logging.warning(str(e))
 
 
-@bot.message_handler(commands=['start'])
-def cmd_start(message):
-    bot.reply_to(message,
-                 "这是一个 RSS 订阅 Bot，更新频率为5分钟\n"
-                 "可以使用 https://feedburner.com 进行代理，减轻订阅源压力\n"
-                 "使用 /help 获取帮助")
+@dp.message_handler(commands=['start'])
+async def cmd_start(message: types.Message):
+    await message.reply(
+        "这是一个 RSS 订阅 Bot，更新频率为5分钟\n"
+        "使用 /help 获取帮助")
 
 
-@bot.message_handler(commands=['help'])
-def cmd_help(message):
-    bot.reply_to(message,
-                 "命令列表：\n" +
-                 "/rss         显示当前订阅列表\n" +
-                 "/sub        订阅一个RSS    `/sub http://example.com/feed`\n" +
-                 "/unsub   退订一个RSS    `/unsub http://example.com/feed`\n" +
-                 "/help       显示帮助信息", parse_mode="MarkdownV2")
+@dp.message_handler(commands=['help'])
+async def cmd_help(message: types.Message):
+    await message.reply(
+        "命令列表：\n" +
+        "/rss         显示当前订阅列表\n" +
+        "/sub        订阅一个RSS    `/sub http://example.com/feed`\n" +
+        "/unsub   退订一个RSS    `/unsub http://example.com/feed`\n" +
+        "/help       显示帮助信息", parse_mode="MarkdownV2")
 
 
-@bot.message_handler(commands=['rss'])
-def cmd_rss(message):
+@dp.message_handler(commands=['rss'])
+async def cmd_rss(message: types.Message):
     """Send to users their subscription list"""
     reword = "订阅列表："
     rss_list = db_chatid(message.chat.id)
     if rss_list:
         for r in rss_list:
-            reword = reword + "\n[%s](%s)    `%s`" % (str(r[1]), str(r[2]), str(r[0]))
-        bot.reply_to(message, str(reword), parse_mode="MarkdownV2", disable_web_page_preview=True)
+            reword += f"\n[{r[1]}]({r[2]})    `{r[0]}`"
+        await message.reply(reword, parse_mode="MarkdownV2", disable_web_page_preview=True)
     else:
-        bot.reply_to(message, "还未添加任何订阅，使用 /help 来获取帮助")
+        await message.reply("还未添加任何订阅，使用 /help 来获取帮助")
 
 
-@bot.message_handler(commands=['sub'])
-def cmd_sub(message):
+@dp.message_handler(commands=['sub'])
+async def cmd_sub(message: types.Message):
     """Add subscription"""
     # Check if the format is correct
     try:
         rss = message.text.split()[1]
     except IndexError:
-        bot.reply_to(message, "使用方法: `/sub http://example.com/feed`", parse_mode="MarkdownV2")
+        await message.reply("使用方法: `/sub http://example.com/feed`", parse_mode="MarkdownV2")
     else:
         # Check if RSS is subscribed
         if db_chatid_rss(message.chat.id, rss):
-            bot.reply_to(message, "订阅过的 RSS")
+            await message.reply("订阅过的 RSS")
         else:
             # Check if this RSS link exists in the rss table
             db_rss_list = db_rss(rss)
             if db_rss_list:
                 db_write_usr(message.chat.id, rss)
-                bot.reply_to(message, "[%s](%s) 订阅成功" % (db_rss_list[0][1], db_rss_list[0][2]), parse_mode="MarkdownV2",
-                             disable_web_page_preview=True)
+                await message.reply("[%s](%s) 订阅成功" % (db_rss_list[0][1], db_rss_list[0][2]), parse_mode="MarkdownV2",
+                                    disable_web_page_preview=True)
             else:
                 # Check if the RSS link is valid
-                try:
-                    rss_content = requests.get(rss, timeout=5, proxies={"http": None, "https": None})
-                except requests.exceptions.ReadTimeout as e:
-                    bot.reply_to(message, "订阅失败：连接超时（%s）" % e)
-                except requests.exceptions.ConnectionError as e:
-                    bot.reply_to(message, "订阅失败：链接错误（%s）" % e)
-                else:
-                    rss_parse = feedparser.parse(io.BytesIO(rss_content.content))
-                    if len(rss_parse.entries) < 1:
-                        bot.reply_to(message, "订阅失败：无效的 RSS 链接")
+                async with aiohttp.ClientSession(headers=headers) as session:
+                    try:
+                        async with session.get(rss, timeout=10) as response:
+                            rss_content = await response.text()
+                            status_code = response.status
+                    except aiohttp.client_exceptions.ClientConnectorError as e:
+                        await message.reply(f"订阅失败：链接错误({e})")
+                    except asyncio.exceptions.TimeoutError as e:
+                        await message.reply(f"订阅失败：连接超时({e})")
                     else:
-                        db_write_rss(rss, rss_parse.feed.title, rss_parse.feed.link, rss_parse.entries[0].link)
-                        db_write_usr(message.chat.id, rss)
-                        bot.reply_to(message, "[%s](%s) 订阅成功" % (rss_parse.feed.title, rss_parse.feed.link),
-                                     parse_mode="MarkdownV2", disable_web_page_preview=True)
+                        rss_parse = feedparser.parse(rss_content)
+                        if len(rss_parse.entries) < 1:
+                            await message.reply(f"订阅失败：链接无效(status:{status_code})")
+                        else:
+                            db_write_rss(rss, rss_parse.feed.title, rss_parse.feed.link, rss_parse.entries[0].link)
+                            db_write_usr(message.chat.id, rss)
+                            await message.reply("[%s](%s) 订阅成功" % (rss_parse.feed.title, rss_parse.feed.link),
+                                                parse_mode="MarkdownV2", disable_web_page_preview=True)
 
 
-@bot.message_handler(commands=['unsub'])
-def cmd_unsub(message):
+@dp.message_handler(commands=['unsub'])
+async def cmd_unsub(message: types.Message):
     """Remove subscription"""
     # Check if the format is correct
     try:
         rss = message.text.split()[1]
     except IndexError:
-        bot.reply_to(message, "使用方法: `/unsub http://example.com/feed`", parse_mode="MarkdownV2")
+        await message.reply("使用方法: `/unsub http://example.com/feed`", parse_mode="MarkdownV2")
     else:
         # Check if RSS is subscribed
         row = db_chatid_rss(message.chat.id, rss)
         if len(row) > 0:
             result = db_remove(message.chat.id, rss)
             if not result:
-                bot.reply_to(message, "[%s](%s) 退订成功" % (row[0][1], row[0][2]), parse_mode="MarkdownV2",
-                             disable_web_page_preview=True)
+                await message.reply("[%s](%s) 退订成功" % (row[0][1], row[0][2]), parse_mode="MarkdownV2",
+                                    disable_web_page_preview=True)
             else:
-                bot.reply_to(message, "移除失败：%s" % result)
+                await message.reply("移除失败：%s" % result)
         else:
-            bot.reply_to(message, "未订阅过的 RSS")
+            await message.reply("未订阅过的 RSS")
 
 
-@bot.message_handler(commands=['refresh'])
-def cmd_refresh(message):
+@dp.message_handler(commands=['refresh'])
+async def cmd_refresh(message: types.Message):
     """Update subscription manually"""
-    get_refresh()
+    await get_refresh()
 
 
-# Init database
-try:
-    db_init()
-except sqlite3.OperationalError:
-    pass
+async def on_startup(dp):
+    await bot.set_webhook(WEBHOOK_URL, ip_address=config.SERVER_IP)
+    # insert code here to run it after start
+
+
+async def on_shutdown(dp):
+    logging.warning('Shutting down..')
+
+    # insert code here to run it before shutdown
+
+    # Remove webhook (not acceptable in some cases)
+    await bot.delete_webhook()
+
+    # Close DB connection (if used)
+    await dp.storage.close()
+    await dp.storage.wait_closed()
+
+    logging.warning('Bye!')
+
+
+# Timed task
+scheduler = AsyncIOScheduler()
+scheduler.add_job(get_refresh, 'interval', minutes=config.INTERVAL)
+scheduler.start()
 
 if __name__ == '__main__':
-    app.run()
+    # Init database
+    try:
+        db_init()
+    except sqlite3.OperationalError:
+        pass
+
+    # Start bot
+    start_webhook(
+        dispatcher=dp,
+        webhook_path=WEBHOOK_PATH,
+        on_startup=on_startup,
+        on_shutdown=on_shutdown,
+        skip_updates=True,
+        host=WEBAPP_HOST,
+        port=WEBAPP_PORT,
+    )
