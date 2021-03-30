@@ -55,18 +55,18 @@ async def get_list(entries, last_link):
 async def get_refresh():
     """Update subscription"""
     rows = db_all()
-    loop = asyncio.get_event_loop()
-    async with aiohttp.ClientSession(loop=loop, headers=headers) as session:
+    async with aiohttp.ClientSession(
+            connector=aiohttp.TCPConnector(ssl=False), headers=headers) as session:
         tasks = [
-            loop.create_task(refresh(session, row))
+            asyncio.create_task(refresh(session, row))
             for row in rows]
-        await asyncio.gather(*tasks)
+        await asyncio.wait(tasks)
 
 
 async def refresh(session, row):
     """Refresh subscription"""
     try:
-        async with session.get(row[0], timeout=10) as response:
+        async with session.get(row[0]) as response:
             rss_content = await response.text()
             status_code = response.status
     except aiohttp.client_exceptions.ClientConnectorError:
@@ -94,19 +94,18 @@ async def refresh(session, row):
 
 @dp.message_handler(commands=['start'])
 async def cmd_start(message: types.Message):
-    await message.reply(
-        "这是一个 RSS 订阅 Bot，更新频率为5分钟\n"
-        "使用 /help 获取帮助")
+    await message.reply(f"这是一个 RSS 订阅 Bot，更新频率为{config.INTERVAL}分钟\n"
+                        f"使用 /help 获取帮助")
 
 
 @dp.message_handler(commands=['help'])
 async def cmd_help(message: types.Message):
     await message.reply(
-        "命令列表：\n" +
-        "/rss         显示当前订阅列表\n" +
-        "/sub        订阅一个RSS    `/sub http://example.com/feed`\n" +
-        "/unsub   退订一个RSS    `/unsub http://example.com/feed`\n" +
-        "/help       显示帮助信息", parse_mode="MarkdownV2")
+                        "命令列表：\n" +
+                        "/rss         显示当前订阅列表\n" +
+                        "/sub        订阅一个RSS    `/sub http://example.com/feed`\n" +
+                        "/unsub   退订一个RSS    `/unsub http://example.com/feed`\n" +
+                        "/help       显示帮助信息", parse_mode="MarkdownV2")
 
 
 @dp.message_handler(commands=['rss'])
@@ -143,9 +142,10 @@ async def cmd_sub(message: types.Message):
                                     disable_web_page_preview=True)
             else:
                 # Check if the RSS link is valid
-                async with aiohttp.ClientSession(headers=headers) as session:
+                async with aiohttp.ClientSession(
+                        connector=aiohttp.TCPConnector(ssl=False), headers=headers) as session:
                     try:
-                        async with session.get(rss, timeout=10) as response:
+                        async with session.get(rss) as response:
                             rss_content = await response.text()
                             status_code = response.status
                     except aiohttp.client_exceptions.ClientConnectorError as e:
@@ -205,8 +205,8 @@ async def on_shutdown(dp):
     await bot.delete_webhook()
 
     # Close DB connection (if used)
-    await dp.storage.close()
-    await dp.storage.wait_closed()
+    # await dp.storage.close()
+    # await dp.storage.wait_closed()
 
     logging.warning('Bye!')
 
