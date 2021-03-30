@@ -3,7 +3,6 @@
 import asyncio
 import logging
 
-# import aiogram
 import feedparser
 from aiogram import Bot, Dispatcher, executor, types
 import aiohttp
