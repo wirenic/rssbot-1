@@ -2,6 +2,7 @@
 # -*- coding: utf-8 -*-
 import asyncio
 import logging
+import time
 
 import feedparser
 from aiogram import Bot, Dispatcher, executor, types
@@ -65,19 +66,24 @@ async def refresh(session, row):
         rss_parse = feedparser.parse(rss_content)
         if len(rss_parse.entries) < 1:
             logging.warning(f"{row[1]}[{row[0]}]\t更新失败：链接失效(status:{status_code})")
-        link_list = await get_list(rss_parse.entries, row[-1])
-        if link_list:
-            # Get subscribers
-            usrlist = db_rssusr(row[0])
-            if usrlist:
-                for usr in usrlist:
-                    uid = usr[0]
-                    for link in link_list:
-                        await bot.send_message(uid, f"<b>{row[1]}</b>\n{link}", parse_mode="HTML")
-            try:
-                db_update(row[0], link_list[0])
-            except Exception as e:
-                logging.warning(str(e))
+        else:
+            # Sort by publish time
+            sort_list = [ent for ent in rss_parse.entries]
+            sort_list.sort(key=lambda ent: time.mktime(ent.published_parsed), reverse=True)
+
+            link_list = await get_list(sort_list, row[-1])
+            if link_list:
+                # Get subscribers
+                usrlist = db_rssusr(row[0])
+                if usrlist:
+                    for usr in usrlist:
+                        uid = usr[0]
+                        for link in link_list:
+                            await bot.send_message(uid, f"<b>{row[1]}</b>\n{link}", parse_mode="HTML")
+                try:
+                    db_update(row[0], link_list[0])
+                except Exception as e:
+                    logging.warning(str(e))
 
 
 @dp.message_handler(commands=['start'])
@@ -89,11 +95,11 @@ async def cmd_start(message: types.Message):
 @dp.message_handler(commands=['help'])
 async def cmd_help(message: types.Message):
     await message.reply(
-                        "命令列表：\n" +
-                        "/rss         显示当前订阅列表\n" +
-                        "/sub        订阅一个RSS    `/sub http://example.com/feed`\n" +
-                        "/unsub   退订一个RSS    `/unsub http://example.com/feed`\n" +
-                        "/help       显示帮助信息", parse_mode="MarkdownV2")
+        "命令列表：\n" +
+        "/rss         显示当前订阅列表\n" +
+        "/sub        订阅一个RSS    `/sub http://example.com/feed`\n" +
+        "/unsub   退订一个RSS    `/unsub http://example.com/feed`\n" +
+        "/help       显示帮助信息", parse_mode="MarkdownV2")
 
 
 @dp.message_handler(commands=['rss'])
@@ -145,7 +151,11 @@ async def cmd_sub(message: types.Message):
                         if len(rss_parse.entries) < 1:
                             await message.reply(f"订阅失败：链接无效(status:{status_code})")
                         else:
-                            db_write_rss(rss, rss_parse.feed.title, rss_parse.feed.link, rss_parse.entries[0].link)
+                            # Sort by publish time
+                            sort_list = [ent for ent in rss_parse.entries]
+                            sort_list.sort(key=lambda ent: time.mktime(ent.published_parsed), reverse=True)
+
+                            db_write_rss(rss, rss_parse.feed.title, rss_parse.feed.link, sort_list[0].link)
                             db_write_usr(message.chat.id, rss)
                             await message.reply("[%s](%s) 订阅成功" % (rss_parse.feed.title, rss_parse.feed.link),
                                                 parse_mode="MarkdownV2", disable_web_page_preview=True)
