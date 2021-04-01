@@ -27,6 +27,7 @@ WEBAPP_PORT = config.WEBAPP_PORT
 
 # Configure logging
 logging.basicConfig(
+    filename='webhook.log',
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
     level=logging.WARNING)
 
@@ -175,12 +176,22 @@ async def cmd_unsub(message: types.Message):
         # Check if RSS is subscribed
         row = db_chatid_rss(message.chat.id, rss)
         if len(row) > 0:
-            result = db_remove(message.chat.id, rss)
-            if not result:
-                await message.reply("[%s](%s) 退订成功" % (row[0][1], row[0][2]), parse_mode="MarkdownV2",
-                                    disable_web_page_preview=True)
+            # Check for other subscribers
+            usr = db_rssusr(rss)
+            if len(usr) > 1:
+                result = db_remove_usr_rss(message.chat.id, rss)
+                if not result:
+                    await message.reply(f"[{row[0][1]}]({row[0][2]}) 退订成功", parse_mode="MarkdownV2",
+                                        disable_web_page_preview=True)
+                else:
+                    await message.reply(f"移除失败：{result}")
             else:
-                await message.reply("移除失败：%s" % result)
+                result = db_remove_rss(rss) + db_remove_usr_rss(message.chat.id, rss)
+                if not result:
+                    await message.reply(f"[{row[0][1]}]({row[0][2]}) 退订成功", parse_mode="MarkdownV2",
+                                        disable_web_page_preview=True)
+                else:
+                    await message.reply(f"移除失败：{result}")
         else:
             await message.reply("未订阅过的 RSS")
 

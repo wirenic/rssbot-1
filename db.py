@@ -91,7 +91,7 @@ def db_write_usr(chatid, rss):
     conn.close()
 
 
-def db_remove(chatid, rss):
+def db_remove_usr_rss(chatid, rss):
     """Delete subscription"""
     try:
         conn = sqlite3.connect('rss.db', check_same_thread=False)
@@ -102,4 +102,18 @@ def db_remove(chatid, rss):
     except sqlite3.Error as e:
         return str(e)
     else:
-        return False
+        return ""
+
+
+def db_remove_rss(rss):
+    """Delete rss"""
+    try:
+        conn = sqlite3.connect('rss.db', check_same_thread=False)
+        c = conn.cursor()
+        c.execute("DELETE FROM rss WHERE rss = ?", (rss,))
+        conn.commit()
+        conn.close()
+    except sqlite3.Error as e:
+        return str(e)
+    else:
+        return ""
