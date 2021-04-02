@@ -140,7 +140,6 @@ async def cmd_sub(message: types.Message):
                 title = db_rss_list[0][1]
                 for k in rep:
                     title = title.replace(k, rep[k])
-                logging.warning(title)
                 await message.reply(f"[{title}]({db_rss_list[0][2]}) 订阅成功", parse_mode="MarkdownV2",
                                     disable_web_page_preview=True)
             else:
@@ -169,7 +168,6 @@ async def cmd_sub(message: types.Message):
                             title = rss_parse.feed.title
                             for k in rep:
                                 title = title.replace(k, rep[k])
-                            logging.warning(title)
                             await message.reply(f"[{title}]({rss_parse.feed.link}) 订阅成功", parse_mode="MarkdownV2",
                                                 disable_web_page_preview=True)
 
