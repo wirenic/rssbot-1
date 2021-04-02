@@ -17,6 +17,8 @@ from db import *
 
 API_TOKEN = config.TOKEN
 
+rep = {"\\": r"\\", "`": "\\`", "*": "\\*", "_": "\\_", "#": "\\#", "+": "\\+", "-": "\\-", ".": "\\.", "!": "\\!"}
+
 # webhook settings
 WEBHOOK_HOST = config.WEBHOOK_HOST
 WEBHOOK_PATH = config.WEBHOOK_PATH
@@ -122,7 +124,10 @@ async def cmd_rss(message: types.Message):
     rss_list = db_chatid(message.chat.id)
     if rss_list:
         for r in rss_list:
-            reword += f"\n[{r[1]}]({r[2]})    `{r[0]}`"
+            title = str(r[1])
+            for k in rep:
+                title = title.replace(k, rep[k])
+            reword += f"\n[{title}]({r[2]})    `{r[0]}`"
         await message.reply(reword, parse_mode="MarkdownV2", disable_web_page_preview=True)
     else:
         await message.reply("还未添加任何订阅，使用 /help 来获取帮助")
@@ -145,7 +150,11 @@ async def cmd_sub(message: types.Message):
             db_rss_list = db_rss(rss)
             if db_rss_list:
                 db_write_usr(message.chat.id, rss)
-                await message.reply("[%s](%s) 订阅成功" % (db_rss_list[0][1], db_rss_list[0][2]), parse_mode="MarkdownV2",
+                title = db_rss_list[0][1]
+                for k in rep:
+                    title = title.replace(k, rep[k])
+                logging.warning(title)
+                await message.reply(f"[{title}]({db_rss_list[0][2]}) 订阅成功", parse_mode="MarkdownV2",
                                     disable_web_page_preview=True)
             else:
                 # Check if the RSS link is valid
@@ -170,8 +179,12 @@ async def cmd_sub(message: types.Message):
 
                             db_write_rss(rss, rss_parse.feed.title, rss_parse.feed.link, sort_list[0].link)
                             db_write_usr(message.chat.id, rss)
-                            await message.reply("[%s](%s) 订阅成功" % (rss_parse.feed.title, rss_parse.feed.link),
-                                                parse_mode="MarkdownV2", disable_web_page_preview=True)
+                            title = rss_parse.feed.title
+                            for k in rep:
+                                title = title.replace(k, rep[k])
+                            logging.warning(title)
+                            await message.reply(f"[{title}]({rss_parse.feed.link}) 订阅成功", parse_mode="MarkdownV2",
+                                                disable_web_page_preview=True)
 
 
 @dp.message_handler(commands=['unsub'])
@@ -191,14 +204,20 @@ async def cmd_unsub(message: types.Message):
             if len(usr) > 1:
                 result = db_remove_usr_rss(message.chat.id, rss)
                 if not result:
-                    await message.reply(f"[{row[0][1]}]({row[0][2]}) 退订成功", parse_mode="MarkdownV2",
+                    title = row[0][1]
+                    for k in rep:
+                        title = title.replace(k, rep[k])
+                    await message.reply(f"[{title}]({row[0][2]}) 退订成功", parse_mode="MarkdownV2",
                                         disable_web_page_preview=True)
                 else:
                     await message.reply(f"移除失败：{result}")
             else:
                 result = db_remove_rss(rss) + db_remove_usr_rss(message.chat.id, rss)
                 if not result:
-                    await message.reply(f"[{row[0][1]}]({row[0][2]}) 退订成功", parse_mode="MarkdownV2",
+                    title = row[0][1]
+                    for k in rep:
+                        title = title.replace(k, rep[k])
+                    await message.reply(f"[{title}]({row[0][2]}) 退订成功", parse_mode="MarkdownV2",
                                         disable_web_page_preview=True)
                 else:
                     await message.reply(f"移除失败：{result}")
